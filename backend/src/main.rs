@@ -1,5 +1,6 @@
 mod auth;
 mod db;
+mod discord_gateway;
 mod messages;
 mod remote_auth;
 mod rooms;
@@ -22,6 +23,7 @@ async fn main() -> std::io::Result<()> {
     let online_users = ws::create_online_users();
     let access_cache = ws::create_access_cache();
     let qr_sessions = remote_auth::create_qr_sessions();
+    let discord_gateways = discord_gateway::create_discord_gateways();
 
     // Ensure uploads directory exists
     std::fs::create_dir_all("uploads").ok();
@@ -42,6 +44,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(online_users.clone()))
             .app_data(web::Data::new(access_cache.clone()))
             .app_data(web::Data::new(qr_sessions.clone()))
+            .app_data(web::Data::new(discord_gateways.clone()))
             .route("/api/health", web::get().to(|| async {
                 HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
             }))
@@ -56,6 +59,12 @@ async fn main() -> std::io::Result<()> {
             .route("/api/users/me", web::patch().to(auth::update_profile))
             .route("/api/discord/me", web::get().to(auth::get_discord_me))
             .route("/api/discord/proxy", web::post().to(auth::discord_proxy))
+            .route("/api/discord/voice/join", web::post().to(discord_gateway::voice_join))
+            .route("/api/discord/voice/leave", web::post().to(discord_gateway::voice_leave))
+            .route(
+                "/api/discord/voice/participants",
+                web::get().to(discord_gateway::voice_participants),
+            )
             .route("/api/users/{id}", web::delete().to(auth::delete_user))
             .route("/api/users/{id}/role", web::patch().to(auth::update_user_role))
             .route("/api/server/roles", web::get().to(auth::list_server_roles))

@@ -3701,6 +3701,11 @@ function exitDiscordMode() {
     discordState.currentGuildId = null;
     discordState.currentChannelId = null;
 
+    // Disconnect Discord voice if connected
+    if (window.VoxiumDiscordVoice && window.VoxiumDiscordVoice.isConnected()) {
+        leaveDiscordVoiceChannel();
+    }
+
     // Guild bar: restore
     localGuildsContainer?.classList.remove("hidden");
     discordGuildsContainer?.classList.add("hidden");
@@ -4006,13 +4011,418 @@ function appendDiscordChannelItem(channel) {
         li.addEventListener("click", () => selectDiscordChannel(channel));
     } else {
         li.classList.add("discord-voice-channel");
-        li.title = "Canal vocal (non supporté en navigation)";
+        li.title = "Cliquer pour rejoindre le vocal";
+        li.addEventListener("click", () => joinDiscordVoiceChannel(channel));
     }
     roomsList.appendChild(li);
 }
 
+// ── Discord Voice Channel Handling ──────────────────────
+
+// State tracking for Discord voice
+const discordVoiceState = {
+    channelId: null,
+    channelName: null,
+    guildId: null,
+    connecting: false,
+};
+
+const discordVoiceUiState = {
+    participants: [],
+    speakingByUserId: new Set(),
+    pollTimer: null,
+    viewActive: false,
+};
+
+// Set up callbacks
+if (window.VoxiumDiscordVoice) {
+    window.VoxiumDiscordVoice.setCallbacks({
+        onStateChange: (state) => {
+            console.log("[main] Discord voice state:", state);
+            updateDiscordVoiceUI(state);
+        },
+        onSpeaking: (userId, ssrc, speaking) => {
+            if (!userId) return;
+            if (speaking) discordVoiceUiState.speakingByUserId.add(userId);
+            else discordVoiceUiState.speakingByUserId.delete(userId);
+            _renderDiscordVoiceParticipants();
+        },
+        onError: (msg) => {
+            showToast(msg, "error");
+            discordVoiceState.connecting = false;
+            updateDiscordVoiceUI("disconnected");
+        },
+    });
+}
+
+function _ensureDiscordVoiceScreen() {
+    let screen = document.getElementById("discord-voice-screen");
+    if (screen) return screen;
+
+    const chatArea = document.querySelector("main.chat-area");
+    if (!chatArea) return null;
+
+    screen = document.createElement("div");
+    screen.id = "discord-voice-screen";
+    screen.className = "discord-voice-screen hidden";
+    screen.innerHTML = `
+        <div class="discord-voice-screen-header">
+            <div class="discord-voice-screen-header-left">
+                <div class="discord-voice-screen-label">Vocal Discord</div>
+                <div class="discord-voice-screen-title" id="discord-voice-screen-title">Salon vocal</div>
+            </div>
+            <div class="discord-voice-screen-pill" id="discord-voice-screen-pill">Connecté</div>
+        </div>
+        <div class="discord-voice-participants" id="discord-voice-participants"></div>
+        <div class="discord-voice-screen-controls">
+            <button class="discord-voice-ctrl-btn" id="discord-voice-ctrl-mute" type="button" title="Muet" aria-label="Muet">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+            <button class="discord-voice-ctrl-btn" id="discord-voice-ctrl-deafen" type="button" title="Sourdine" aria-label="Sourdine">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"></path>
+                    <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+                </svg>
+            </button>
+            <button class="discord-voice-ctrl-btn danger" id="discord-voice-ctrl-disconnect" type="button" title="Quitter" aria-label="Quitter">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2 2l20 20"></path>
+                    <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                </svg>
+            </button>
+        </div>
+    `;
+
+    const messages = document.getElementById("messages-container");
+    if (messages && messages.parentElement === chatArea) {
+        chatArea.insertBefore(screen, messages);
+    } else {
+        chatArea.appendChild(screen);
+    }
+
+    screen.querySelector("#discord-voice-ctrl-mute")?.addEventListener("click", () => {
+        window.VoxiumDiscordVoice?.toggleMute?.();
+        _syncDiscordVoiceControlButtons();
+    });
+    screen.querySelector("#discord-voice-ctrl-deafen")?.addEventListener("click", () => {
+        window.VoxiumDiscordVoice?.toggleDeafen?.();
+        _syncDiscordVoiceControlButtons();
+    });
+    screen.querySelector("#discord-voice-ctrl-disconnect")?.addEventListener("click", () => {
+        leaveDiscordVoiceChannel();
+    });
+
+    return screen;
+}
+
+function _syncDiscordVoiceControlButtons() {
+    const screen = document.getElementById("discord-voice-screen");
+    if (!screen || !window.VoxiumDiscordVoice) return;
+    const muteBtn = screen.querySelector("#discord-voice-ctrl-mute");
+    const deafBtn = screen.querySelector("#discord-voice-ctrl-deafen");
+    muteBtn?.classList.toggle("active", window.VoxiumDiscordVoice.isMuted());
+    deafBtn?.classList.toggle("active", window.VoxiumDiscordVoice.isDeafened());
+}
+
+function _setDiscordVoiceScreenVisible(visible) {
+    const screen = _ensureDiscordVoiceScreen();
+    if (!screen) return;
+    screen.classList.toggle("hidden", !visible);
+}
+
+function _renderDiscordVoiceParticipants() {
+    const grid = document.getElementById("discord-voice-participants");
+    if (!grid) return;
+
+    const participants = Array.isArray(discordVoiceUiState.participants)
+        ? discordVoiceUiState.participants
+        : [];
+
+    grid.innerHTML = "";
+
+    if (participants.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "discord-placeholder";
+        empty.textContent = "Aucun participant détecté pour ce vocal.";
+        grid.appendChild(empty);
+        return;
+    }
+
+    for (const p of participants) {
+        const userId = p.user_id;
+        const speaking = discordVoiceUiState.speakingByUserId.has(userId);
+
+        const tile = document.createElement("div");
+        tile.className = `discord-voice-tile${speaking ? " speaking" : ""}`;
+        tile.dataset.userId = userId;
+
+        const avatar = document.createElement("div");
+        avatar.className = "discord-voice-avatar";
+        if (p.avatar_url) {
+            const img = document.createElement("img");
+            img.alt = "";
+            img.src = p.avatar_url;
+            avatar.appendChild(img);
+        } else {
+            const fallback = document.createElement("span");
+            const name = p.display_name || "?";
+            fallback.textContent = name.trim().slice(0, 1).toUpperCase();
+            avatar.appendChild(fallback);
+        }
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "discord-voice-name";
+        nameEl.textContent = p.display_name || `Utilisateur ${String(userId).slice(-4)}`;
+
+        tile.appendChild(avatar);
+        tile.appendChild(nameEl);
+        grid.appendChild(tile);
+    }
+}
+
+async function _fetchDiscordVoiceParticipantsOnce() {
+    if (!discordVoiceState.guildId || !discordVoiceState.channelId) return;
+    const token = localStorage.getItem("token") || "";
+
+    const url = `${API.replace(/\/$/, "")}/api/discord/voice/participants?guild_id=${encodeURIComponent(discordVoiceState.guildId)}&channel_id=${encodeURIComponent(discordVoiceState.channelId)}`;
+    const resp = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const list = await resp.json().catch(() => []);
+    if (!Array.isArray(list)) return;
+
+    discordVoiceUiState.participants = list;
+    _renderDiscordVoiceParticipants();
+}
+
+function _startDiscordVoiceParticipantsPolling() {
+    _stopDiscordVoiceParticipantsPolling();
+    _fetchDiscordVoiceParticipantsOnce();
+    discordVoiceUiState.pollTimer = setInterval(() => {
+        _fetchDiscordVoiceParticipantsOnce();
+    }, 2000);
+}
+
+function _stopDiscordVoiceParticipantsPolling() {
+    if (discordVoiceUiState.pollTimer) {
+        clearInterval(discordVoiceUiState.pollTimer);
+        discordVoiceUiState.pollTimer = null;
+    }
+    discordVoiceUiState.participants = [];
+    discordVoiceUiState.speakingByUserId = new Set();
+    _renderDiscordVoiceParticipants();
+}
+
+async function joinDiscordVoiceChannel(channel) {
+    if (!window.VoxiumDiscordVoice) {
+        showToast("Module vocal Discord non disponible", "error");
+        return;
+    }
+
+    // If already in this channel, disconnect
+    if (window.VoxiumDiscordVoice.isConnected() && window.VoxiumDiscordVoice.getChannelId() === channel.id) {
+        await leaveDiscordVoiceChannel();
+        return;
+    }
+
+    // If in another channel, leave first
+    if (window.VoxiumDiscordVoice.isConnected()) {
+        await leaveDiscordVoiceChannel();
+    }
+
+    discordVoiceState.channelId = channel.id;
+    discordVoiceState.channelName = channel.name;
+    discordVoiceState.guildId = discordState.currentGuildId;
+    discordVoiceState.connecting = true;
+    discordVoiceUiState.viewActive = true;
+
+    // Update UI — highlight the voice channel
+    roomsList.querySelectorAll(".discord-voice-channel").forEach(li => {
+        li.classList.toggle("discord-voice-active", li.dataset.id === channel.id);
+    });
+
+    updateDiscordVoiceUI("connecting");
+
+    try {
+        await window.VoxiumDiscordVoice.joinVoice(discordState.currentGuildId, channel.id);
+    } catch (err) {
+        showToast(err.message || "Échec de connexion vocale", "error");
+        discordVoiceState.connecting = false;
+        updateDiscordVoiceUI("disconnected");
+    }
+}
+
+async function leaveDiscordVoiceChannel() {
+    if (!window.VoxiumDiscordVoice) return;
+    await window.VoxiumDiscordVoice.leaveVoice();
+    discordVoiceState.channelId = null;
+    discordVoiceState.channelName = null;
+    discordVoiceState.guildId = null;
+    discordVoiceState.connecting = false;
+    roomsList.querySelectorAll(".discord-voice-channel").forEach(li => {
+        li.classList.remove("discord-voice-active");
+    });
+    updateDiscordVoiceUI("disconnected");
+}
+
+function updateDiscordVoiceUI(state) {
+    // Update the voice status in sidebar
+    const statusDot = document.getElementById("voice-status-dot");
+    const statusText = document.getElementById("voice-status-text");
+    const voiceChip = document.getElementById("voice-room-chip");
+
+    if (state === "connecting") {
+        if (statusDot) statusDot.className = "voice-status-dot connecting";
+        if (statusText) statusText.textContent = `Connexion à ${discordVoiceState.channelName || "un salon vocal"}…`;
+        if (voiceChip) {
+            voiceChip.textContent = "Connexion…";
+            voiceChip.className = "voice-room-chip";
+        }
+
+        if (discordVoiceUiState.viewActive) {
+            const screen = _ensureDiscordVoiceScreen();
+            if (screen) {
+                screen.querySelector("#discord-voice-screen-title").textContent = discordVoiceState.channelName || "Salon vocal";
+                screen.querySelector("#discord-voice-screen-pill").textContent = "Connexion…";
+                _syncDiscordVoiceControlButtons();
+            }
+            _setDiscordVoiceScreenVisible(true);
+            document.getElementById("messages-container")?.classList.add("hidden");
+            document.getElementById("voice-room-panel")?.classList.add("hidden");
+            document.getElementById("message-input-area")?.classList.add("hidden");
+        }
+    } else if (state === "connected") {
+        discordVoiceState.connecting = false;
+        if (statusDot) statusDot.className = "voice-status-dot connected";
+        if (statusText) statusText.textContent = `Connecté : ${discordVoiceState.channelName || "salon vocal Discord"}`;
+        if (voiceChip) {
+            voiceChip.textContent = "Connecté";
+            voiceChip.className = "voice-room-chip is-live";
+        }
+        showToast(`Connecté à ${discordVoiceState.channelName || "vocal Discord"}`, "success");
+
+        if (discordVoiceUiState.viewActive) {
+            const screen = _ensureDiscordVoiceScreen();
+            if (screen) {
+                screen.querySelector("#discord-voice-screen-title").textContent = discordVoiceState.channelName || "Salon vocal";
+                screen.querySelector("#discord-voice-screen-pill").textContent = "Connecté";
+                _syncDiscordVoiceControlButtons();
+            }
+            _setDiscordVoiceScreenVisible(true);
+            document.getElementById("messages-container")?.classList.add("hidden");
+            document.getElementById("voice-room-panel")?.classList.add("hidden");
+            document.getElementById("message-input-area")?.classList.add("hidden");
+            _startDiscordVoiceParticipantsPolling();
+        }
+    } else {
+        // disconnected
+        if (statusDot) statusDot.className = "voice-status-dot";
+        if (statusText) statusText.textContent = "Pas connecté à un salon vocal";
+        if (voiceChip) {
+            voiceChip.textContent = "Non connecté";
+            voiceChip.className = "voice-room-chip";
+        }
+
+        _setDiscordVoiceScreenVisible(false);
+        document.getElementById("messages-container")?.classList.remove("hidden");
+        if (discordState.mode && discordState.currentChannelId) {
+            document.getElementById("message-input-area")?.classList.remove("hidden");
+        }
+        _stopDiscordVoiceParticipantsPolling();
+    }
+
+    // Show/hide the Discord voice disconnect bar
+    _updateDiscordVoiceBar();
+}
+
+function _updateDiscordVoiceBar() {
+    let bar = document.getElementById("discord-voice-bar");
+    const isConnected = window.VoxiumDiscordVoice && window.VoxiumDiscordVoice.isConnected();
+    const isConnecting = discordVoiceState.connecting;
+
+    if (isConnected || isConnecting) {
+        if (!bar) {
+            bar = document.createElement("div");
+            bar.id = "discord-voice-bar";
+            bar.className = "discord-voice-bar";
+            // Insert after voice-quick-status in sidebar
+            const quickStatus = document.getElementById("voice-quick-status");
+            if (quickStatus && quickStatus.parentNode) {
+                quickStatus.parentNode.insertBefore(bar, quickStatus.nextSibling);
+            } else {
+                document.querySelector(".sidebar")?.appendChild(bar);
+            }
+        }
+        const channelName = discordVoiceState.channelName || "Vocal Discord";
+        const statusLabel = isConnecting ? "Connexion…" : "Vocal Discord";
+        const muteState = window.VoxiumDiscordVoice.isMuted();
+        const deafState = window.VoxiumDiscordVoice.isDeafened();
+        bar.innerHTML = `
+            <div class="discord-voice-bar-info">
+                <span class="discord-voice-bar-status">${statusLabel}</span>
+                <span class="discord-voice-bar-channel">🔊 ${escapeHtml(channelName)}</span>
+            </div>
+            <div class="discord-voice-bar-controls">
+                <button class="discord-voice-bar-btn${muteState ? " active" : ""}" id="discord-voice-mute-btn" title="${muteState ? "Réactiver micro" : "Couper micro"}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        ${muteState
+                ? '<path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"/><path d="M6 11a1 1 0 1 0-2 0 8 8 0 0 0 7 7.93V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-2.07A8 8 0 0 0 20 11a1 1 0 1 0-2 0 6 6 0 0 1-12 0z"/><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2"/>'
+                : '<path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"/><path d="M6 11a1 1 0 1 0-2 0 8 8 0 0 0 7 7.93V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-2.07A8 8 0 0 0 20 11a1 1 0 1 0-2 0 6 6 0 0 1-12 0z"/>'}
+                </svg>
+                </button>
+                <button class="discord-voice-bar-btn${deafState ? " active" : ""}" id="discord-voice-deafen-btn" title="${deafState ? "Réactiver casque" : "Sourdine"}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        ${deafState
+                ? '<path d="M20 4H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1v4l4-4h11a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2"/>'
+                : '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>'}
+                    </svg>
+                </button>
+                <button class="discord-voice-bar-btn disconnect" id="discord-voice-disconnect-btn" title="Déconnecter">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L18 10l-2-1-3-3-1-2zM7.5 20.5a2.1 2.1 0 0 1-3 0l-1-1a2.1 2.1 0 0 1 0-3L6 14l2 1 3 3 1 2zM2 2l20 20"/>
+                    </svg>
+                </button>
+            </div>
+        `;
+
+        // Event listeners
+        bar.querySelector("#discord-voice-mute-btn")?.addEventListener("click", () => {
+            if (window.VoxiumDiscordVoice) {
+                window.VoxiumDiscordVoice.toggleMute();
+                _updateDiscordVoiceBar();
+            }
+        });
+        bar.querySelector("#discord-voice-deafen-btn")?.addEventListener("click", () => {
+            if (window.VoxiumDiscordVoice) {
+                window.VoxiumDiscordVoice.toggleDeafen();
+                _updateDiscordVoiceBar();
+            }
+        });
+        bar.querySelector("#discord-voice-disconnect-btn")?.addEventListener("click", () => {
+            leaveDiscordVoiceChannel();
+        });
+    } else {
+        if (bar) bar.remove();
+    }
+}
+
 // ── Select Discord channel → load messages ──────────────
 async function selectDiscordChannel(channel) {
+    // Selecting a text channel should show messages even if voice is connected
+    discordVoiceUiState.viewActive = false;
+    _setDiscordVoiceScreenVisible(false);
+    _stopDiscordVoiceParticipantsPolling();
+    document.getElementById("messages-container")?.classList.remove("hidden");
+    document.getElementById("message-input-area")?.classList.remove("hidden");
+
     discordState.currentChannelId = channel.id;
     discordState.oldestMessageId = null;
     roomsList.querySelectorAll("li").forEach(li => li.classList.toggle("active", li.dataset.id === channel.id));

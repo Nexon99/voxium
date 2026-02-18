@@ -18,7 +18,7 @@
             }
         ],
         "security": {
-            "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8080 ws://127.0.0.1:8080 https://discord.com https://cdn.discordapp.com wss://remote-auth-gateway.discord.gg; img-src 'self' data: https://api.qrserver.com https://cdn.discordapp.com https://media.discordapp.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'"
+            "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8080 ws://127.0.0.1:8080 https://discord.com https://cdn.discordapp.com wss://remote-auth-gateway.discord.gg wss://*.discord.media:* wss://*.discord.gg:*; img-src 'self' data: https://api.qrserver.com https://cdn.discordapp.com https://media.discordapp.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'"
         }
     }
 }
