@@ -1,5 +1,5 @@
-use sqlx::{Pool, Sqlite, sqlite::{SqlitePool, SqlitePoolOptions}};
-use std::{fs, path::Path};
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use std::path::Path;
 
 /// Create the SQLite connection pool and run migrations.
 pub async fn init_db() -> SqlitePool {
@@ -39,47 +39,35 @@ pub async fn init_db() -> SqlitePool {
         .execute(&pool)
         .await;
 
-   let files = [
-       "../../migrations/001_init.sql",
-       "../../migrations/002_add_settings.sql",
-       "../../migrations/003_add_images.sql",
-       "../../migrations/004_add_avatar_url.sql",
-       "../../migrations/005_add_room_kind.sql",
-       "../../migrations/006_add_banner_url.sql",
-       "../../migrations/007_add_room_required_role.sql",
-       "../../migrations/008_add_message_reply.sql",
-       "../../migrations/009_add_message_pins.sql",
-       "../../migrations/010_add_server_roles.sql",
-       "../../migrations/011_add_message_reactions.sql",
+    let migrations = [
+        include_str!("../../migrations/001_init.sql"),
+        include_str!("../../migrations/002_add_settings.sql"),
+        include_str!("../../migrations/003_add_images.sql"),
+        include_str!("../../migrations/004_add_avatar_url.sql"),
+        include_str!("../../migrations/005_add_room_kind.sql"),
+        include_str!("../../migrations/006_add_banner_url.sql"),
+        include_str!("../../migrations/007_add_room_required_role.sql"),
+        include_str!("../../migrations/008_add_message_reply.sql"),
+        include_str!("../../migrations/009_add_message_pins.sql"),
+        include_str!("../../migrations/010_add_server_roles.sql"),
+        include_str!("../../migrations/011_add_message_reactions.sql"),
+        include_str!("../../migrations/012_add_perf_indexes.sql"),
+        include_str!("../../migrations/013_add_discord_oauth.sql"),
     ];
 
-   for file in files {
-     migration(file, &pool).await;
-   }
-
-    let migration_013 = include_str!("../../migrations/013_add_discord_oauth.sql");
-    for statement in migration_013.split(';') {
-        let trimmed = statement.trim();
-        if !trimmed.is_empty() {
-            sqlx::query(trimmed).execute(&pool).await.ok();
-        }
+    for sql in migrations {
+        run_migration_sql(sql, &pool).await;
     }
 
     println!("✅ Database initialized");
     pool
 }
 
-async fn migration(path: &str, pool: &Pool<Sqlite>) {
-  let migration = fs::read_to_string(path);
-  match migration {
-    Ok(migration_content) => {
-      for statement in migration_content.split(';') {
-        let trimmed = statement.trim();
-        if !trimmed.is_empty() {
-            sqlx::query(trimmed).execute(pool).await.ok();
+async fn run_migration_sql(sql_content: &str, pool: &SqlitePool) {
+        for statement in sql_content.split(';') {
+                let trimmed = statement.trim();
+                if !trimmed.is_empty() {
+                        sqlx::query(trimmed).execute(pool).await.ok();
+                }
         }
-      }
-    }
-    Err(e) => { print!("Erreur lors de la lecture du fichier : {}", e)}
-  }
 }

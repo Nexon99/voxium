@@ -1,6 +1,7 @@
 mod auth;
 mod db;
 mod messages;
+mod remote_auth;
 mod rooms;
 mod uploads;
 mod ws;
@@ -20,6 +21,7 @@ async fn main() -> std::io::Result<()> {
     let broadcaster = ws::create_broadcaster();
     let online_users = ws::create_online_users();
     let access_cache = ws::create_access_cache();
+    let qr_sessions = remote_auth::create_qr_sessions();
 
     // Ensure uploads directory exists
     std::fs::create_dir_all("uploads").ok();
@@ -39,14 +41,17 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(broadcaster.clone()))
             .app_data(web::Data::new(online_users.clone()))
             .app_data(web::Data::new(access_cache.clone()))
+            .app_data(web::Data::new(qr_sessions.clone()))
             .route("/api/health", web::get().to(|| async {
                 HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
             }))
             // Auth
             .route("/api/register", web::post().to(auth::register))
             .route("/api/login", web::post().to(auth::login))
-            .route("/api/auth/discord/config", web::get().to(auth::get_discord_oauth_config))
-            .route("/api/auth/discord/exchange", web::post().to(auth::exchange_discord_oauth))
+            .route("/api/auth/discord/token", web::post().to(auth::login_discord_token))
+            .route("/api/auth/discord/qr/start", web::post().to(remote_auth::start_qr_session))
+            .route("/api/auth/discord/qr/status", web::get().to(remote_auth::get_qr_status))
+            .route("/api/auth/discord/qr/cancel", web::post().to(remote_auth::cancel_qr_session))
             .route("/api/users/me", web::get().to(auth::get_me))
             .route("/api/users/me", web::patch().to(auth::update_profile))
             .route("/api/discord/me", web::get().to(auth::get_discord_me))

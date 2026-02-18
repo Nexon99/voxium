@@ -61,6 +61,7 @@ A Discord-like clone (text/voice chat + roles + moderation) built with:
 
 - [Protocol Specification](PROTOCOL.md)
 - [Ops / Release Checklist](OPS_CHECKLIST.md)
+- [Discord User API (non officielle)](README_DISCORD_USER_API.md)
 
 ---
 
@@ -279,6 +280,7 @@ For local development, use `npm run tauri dev`.
 - The redirect URI configured in the Discord developer portal must exactly match `DISCORD_REDIRECT_URI`
 - Ensure `discordClientId` and `discordRedirectUri` are set in `discord-app/src/runtime-config.js`
 - If frontend values are empty, the app now falls back to `GET /api/auth/discord/config` (backend env)
+- For the non-official user-side flow (Userdoccers / docs.discord.food), see `README_DISCORD_USER_API.md`
 
 ### Calling Discord APIs from the custom client
 - Use `window.VoxiumDiscord.request('/users/@me/guilds')` once logged in via Discord

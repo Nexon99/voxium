@@ -8,6 +8,7 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+*.bak
 
 # =========================
 # Logs
@@ -26,13 +27,19 @@ pnpm-debug.log*
 !.env.example
 
 # =========================
-# Rust
+# Rust / Cargo
 # =========================
 **/target/
+**/target_qrfix/
 **/*.rs.bk
+Cargo.lock
 
-# SQLite / local DB
+# =========================
+# SQLite / Database
+# =========================
 *.db
+*.db-shm
+*.db-wal
 *.db-journal
 *.sqlite
 *.sqlite3
@@ -44,14 +51,13 @@ node_modules/
 dist/
 build/
 coverage/
+package-lock.json
 
 # =========================
 # Tauri
 # =========================
 src-tauri/target/
 src-tauri/gen/
-
-# Tauri updater/signing keys (if used)
 *.key
 *.pem
 
@@ -59,6 +65,12 @@ src-tauri/gen/
 # Uploads / Runtime files
 # =========================
 uploads/
-
-# Keep folder structure if needed
 !uploads/.gitkeep
+
+# =========================
+# Build artifacts / Temp
+# =========================
+build_output.txt
+build_errors.txt
+*.tmp
+*.temp

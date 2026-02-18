@@ -21,3 +21,9 @@ futures-util = "0.3"
 actix-multipart = "0.7"
 actix-files = "0.6"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
+rsa = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════
 //  Voxium — Frontend Application Logic (v3 — Full Clone)
 // ═══════════════════════════════════════════════════════
 
@@ -112,6 +112,11 @@ const authUsername = $("#auth-username");
 const authPassword = $("#auth-password");
 const authSubmit = $("#auth-submit");
 const authDiscordBtn = $("#auth-discord-btn");
+const authDiscordQrWrap = $("#auth-discord-qr");
+const authDiscordQrImage = $("#auth-discord-qr-image");
+const authDiscordQrPlaceholder = $("#auth-discord-qr-placeholder");
+const authDiscordQrStatus = $("#auth-discord-qr-status");
+const authDiscordCancelBtn = $("#auth-discord-cancel-btn");
 const authError = $("#auth-error");
 const tabLogin = $("#tab-login");
 const tabRegister = $("#tab-register");
@@ -184,6 +189,15 @@ const voiceQuickStatus = $("#voice-quick-status");
 const voiceStatusText = $("#voice-status-text");
 const voiceMeterBars = $("#voice-meter-bars");
 const voiceMeterLabel = $("#voice-meter-label");
+
+// Discord mode (integrated into main UI)
+const discordBrowseBtn = $("#discord-browse-btn");
+const localGuildsContainer = $("#local-guilds-container");
+const discordGuildsContainer = $("#discord-guilds-container");
+const sidebarTextTitle = $("#sidebar-text-title");
+const sidebarVoiceTitle = $("#sidebar-voice-title");
+const sidebarHeaderText = document.querySelector(".sidebar-header > span");
+const homeGuild = $("#home-guild");
 
 let voiceController = null;
 
@@ -338,151 +352,6 @@ function updateGlobalMentionBadge() {
 
 // ── Auth Mode ──────────────────────────────────────────
 let authMode = "login";
-let discordOAuthBackendCache = null;
-
-function getDiscordOAuthConfigFromRuntime() {
-    return {
-        authorizeBaseUrl: (RUNTIME_CONFIG.discordAuthorizeBaseUrl || "https://discord.com/oauth2/authorize").trim(),
-        clientId: (RUNTIME_CONFIG.discordClientId || "").trim(),
-        redirectUri: (RUNTIME_CONFIG.discordRedirectUri || "").trim(),
-        scope: (RUNTIME_CONFIG.discordScope || "identify email guilds").trim(),
-        responseType: (RUNTIME_CONFIG.discordResponseType || "code").trim(),
-        prompt: (RUNTIME_CONFIG.discordPrompt || "consent").trim(),
-    };
-}
-
-async function resolveDiscordOAuthConfig() {
-    const runtimeCfg = getDiscordOAuthConfigFromRuntime();
-    if (runtimeCfg.clientId && runtimeCfg.redirectUri) {
-        return runtimeCfg;
-    }
-
-    if (discordOAuthBackendCache) {
-        return discordOAuthBackendCache;
-    }
-
-    try {
-        const response = await fetch(`${API}/api/auth/discord/config`);
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return null;
-        }
-
-        const backendCfg = {
-            authorizeBaseUrl: (data.authorize_base_url || runtimeCfg.authorizeBaseUrl || "https://discord.com/oauth2/authorize").trim(),
-            clientId: (data.client_id || "").trim(),
-            redirectUri: (data.redirect_uri || "").trim(),
-            scope: (data.scope || runtimeCfg.scope || "identify email guilds").trim(),
-            responseType: (data.response_type || runtimeCfg.responseType || "code").trim(),
-            prompt: (data.prompt || runtimeCfg.prompt || "consent").trim(),
-        };
-
-        if (!backendCfg.clientId || !backendCfg.redirectUri) {
-            return null;
-        }
-
-        discordOAuthBackendCache = backendCfg;
-        return backendCfg;
-    } catch (err) {
-        return null;
-    }
-}
-
-function buildDiscordAuthorizeUrl(cfg) {
-    if (!cfg.clientId || !cfg.redirectUri) {
-        return null;
-    }
-
-    const oauthState = (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function")
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-    sessionStorage.setItem("discord_oauth_state", oauthState);
-
-    const params = new URLSearchParams({
-        client_id: cfg.clientId,
-        response_type: cfg.responseType,
-        redirect_uri: cfg.redirectUri,
-        scope: cfg.scope,
-        state: oauthState,
-    });
-
-    if (cfg.prompt) {
-        params.set("prompt", cfg.prompt);
-    }
-
-    return `${cfg.authorizeBaseUrl}?${params.toString()}`;
-}
-
-function cleanDiscordOAuthParams() {
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.delete("code");
-    currentUrl.searchParams.delete("state");
-    currentUrl.searchParams.delete("error");
-    currentUrl.searchParams.delete("error_description");
-    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
-    window.history.replaceState({}, document.title, nextUrl);
-}
-
-async function handleDiscordOAuthCallback() {
-    const currentUrl = new URL(window.location.href);
-    const error = currentUrl.searchParams.get("error");
-    const errorDescription = currentUrl.searchParams.get("error_description");
-    const code = currentUrl.searchParams.get("code");
-    const stateParam = currentUrl.searchParams.get("state");
-
-    if (error) {
-        authError.textContent = decodeURIComponent(errorDescription || error || "Connexion Discord refusée.");
-        cleanDiscordOAuthParams();
-        return false;
-    }
-
-    if (!code) return false;
-
-    const expectedState = sessionStorage.getItem("discord_oauth_state");
-    if (expectedState && expectedState !== stateParam) {
-        authError.textContent = "État OAuth Discord invalide, recommencez.";
-        sessionStorage.removeItem("discord_oauth_state");
-        cleanDiscordOAuthParams();
-        return false;
-    }
-
-    const cfg = await resolveDiscordOAuthConfig();
-    if (!cfg.redirectUri) {
-        authError.textContent = "Configuration Discord manquante (discordRedirectUri).";
-        cleanDiscordOAuthParams();
-        return false;
-    }
-
-    authError.textContent = "Connexion Discord en cours...";
-    try {
-        const response = await fetch(`${API}/api/auth/discord/exchange`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                code,
-                redirect_uri: cfg.redirectUri,
-            }),
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            authError.textContent = data.error || "Impossible de connecter votre compte Discord.";
-            cleanDiscordOAuthParams();
-            return false;
-        }
-
-        saveSession(data);
-        sessionStorage.removeItem("discord_oauth_state");
-        cleanDiscordOAuthParams();
-        authError.textContent = "";
-        return true;
-    } catch (err) {
-        authError.textContent = "Impossible de contacter le serveur";
-        cleanDiscordOAuthParams();
-        return false;
-    }
-}
 
 tabLogin.addEventListener("click", () => {
     authMode = "login";
@@ -498,16 +367,144 @@ tabRegister.addEventListener("click", () => {
     authSubmit.textContent = "S'inscrire";
 });
 
+// ── Discord QR Auth (server-side flow) ──────────────────
+let discordQrSessionId = null;
+let discordQrPollTimer = null;
+
+function setDiscordQrStatus(message, isError = false) {
+    if (!authDiscordQrStatus) return;
+    authDiscordQrStatus.textContent = message || "";
+    authDiscordQrStatus.style.color = isError ? "var(--red)" : "var(--text-muted)";
+}
+
+function resetDiscordQrUi() {
+    if (authDiscordQrImage) {
+        authDiscordQrImage.classList.add("hidden");
+        authDiscordQrImage.removeAttribute("src");
+    }
+    if (authDiscordQrPlaceholder) {
+        authDiscordQrPlaceholder.classList.remove("hidden");
+        authDiscordQrPlaceholder.textContent = "Cliquez sur “Connexion avec QR Discord” pour générer le QR.";
+    }
+    setDiscordQrStatus("");
+}
+
+function showDiscordQrUi() {
+    authDiscordQrWrap?.classList.remove("hidden");
+    authDiscordCancelBtn?.classList.remove("hidden");
+}
+
+function stopDiscordQrPoll() {
+    if (discordQrPollTimer) {
+        clearInterval(discordQrPollTimer);
+        discordQrPollTimer = null;
+    }
+}
+
+function cleanupDiscordQr() {
+    stopDiscordQrPoll();
+    discordQrSessionId = null;
+}
+
+function cancelDiscordQrAuth(message = "Connexion QR annulée.") {
+    if (discordQrSessionId) {
+        fetch(`${API}/api/auth/discord/qr/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: discordQrSessionId }),
+        }).catch(() => {});
+    }
+    cleanupDiscordQr();
+    resetDiscordQrUi();
+    if (message) setDiscordQrStatus(message);
+}
+
+async function startDiscordQrAuth() {
+    if (discordQrSessionId) return;
+
+    authError.textContent = "";
+    showDiscordQrUi();
+    resetDiscordQrUi();
+    setDiscordQrStatus("Connexion au Remote Auth Gateway Discord...");
+
+    try {
+        const res = await fetch(`${API}/api/auth/discord/qr/start`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || !data.session_id) {
+            throw new Error(data.error || "Impossible de démarrer la session QR.");
+        }
+        discordQrSessionId = data.session_id;
+    } catch (err) {
+        setDiscordQrStatus(err.message || "Erreur démarrage QR.", true);
+        return;
+    }
+
+    // Start polling
+    discordQrPollTimer = setInterval(async () => {
+        if (!discordQrSessionId) { stopDiscordQrPoll(); return; }
+        try {
+            const res = await fetch(`${API}/api/auth/discord/qr/status?session_id=${encodeURIComponent(discordQrSessionId)}`);
+            const status = await res.json();
+            if (!res.ok) { throw new Error(status.error || "Session expirée."); }
+
+            switch (status.status) {
+                case "connecting":
+                    setDiscordQrStatus("Connexion au gateway Discord...");
+                    break;
+                case "waiting_for_qr":
+                    setDiscordQrStatus("Handshake en cours, génération du QR...");
+                    break;
+                case "qr_ready":
+                    if (authDiscordQrImage && authDiscordQrImage.src !== status.qr_url) {
+                        authDiscordQrImage.src = status.qr_url;
+                        authDiscordQrImage.classList.remove("hidden");
+                    }
+                    if (authDiscordQrPlaceholder) authDiscordQrPlaceholder.classList.add("hidden");
+                    setDiscordQrStatus("Scannez ce QR avec l'app mobile Discord puis confirmez la connexion.");
+                    break;
+                case "scanned":
+                    setDiscordQrStatus("Scan détecté. Confirmez la connexion sur votre mobile Discord.");
+                    break;
+                case "completing":
+                    setDiscordQrStatus("Validation finale en cours...");
+                    break;
+                case "completed":
+                    stopDiscordQrPoll();
+                    if (status.auth) {
+                        saveSession(status.auth);
+                        enterApp();
+                        setDiscordQrStatus("Connexion Discord réussie.");
+                    }
+                    cleanupDiscordQr();
+                    break;
+                case "error":
+                    stopDiscordQrPoll();
+                    setDiscordQrStatus(status.message || "Erreur pendant le flow QR.", true);
+                    cleanupDiscordQr();
+                    break;
+                case "cancelled":
+                    stopDiscordQrPoll();
+                    setDiscordQrStatus("Connexion annulée.", true);
+                    cleanupDiscordQr();
+                    break;
+            }
+        } catch (err) {
+            stopDiscordQrPoll();
+            setDiscordQrStatus(err.message || "Erreur de communication.", true);
+            cleanupDiscordQr();
+        }
+    }, 1500);
+}
+
 if (authDiscordBtn) {
     authDiscordBtn.addEventListener("click", async () => {
-        authError.textContent = "";
-        const cfg = await resolveDiscordOAuthConfig();
-        const authorizeUrl = cfg ? buildDiscordAuthorizeUrl(cfg) : null;
-        if (!authorizeUrl) {
-            authError.textContent = "Configuration Discord manquante (frontend ou backend).";
-            return;
-        }
-        window.location.assign(authorizeUrl);
+        await startDiscordQrAuth();
+    });
+}
+
+if (authDiscordCancelBtn) {
+    authDiscordCancelBtn.addEventListener("click", () => {
+        cancelDiscordQrAuth();
     });
 }
 
@@ -713,6 +710,7 @@ function updateUserPanel() {
 
 // ── Load Rooms ─────────────────────────────────────────
 async function loadRooms() {
+    if (discordState.mode) return; // don't overwrite Discord channels
     try {
         const res = await fetch(`${API}/api/rooms`, {
             headers: { Authorization: `Bearer ${state.token}` }
@@ -1006,7 +1004,7 @@ function connectWebSocket() {
         try {
             const msg = JSON.parse(event.data);
 
-            if (msg.type === "message" && msg.room_id === state.currentRoomId) {
+            if (msg.type === "message" && msg.room_id === state.currentRoomId && !discordState.mode) {
                 const lastMsg = messagesContainer.querySelector(".message:last-child");
                 let isFirstInGroup = true;
                 if (lastMsg) {
@@ -1999,6 +1997,20 @@ messageForm.addEventListener("submit", async (e) => {
     const content = messageInput.value.trim();
     const file = fileInput.files[0];
     if (!content && !file) return;
+
+    // Discord mode: send via Discord API
+    if (discordState.mode && discordState.currentChannelId) {
+        if (!content) return;
+        messageInput.value = "";
+        try {
+            await VoxiumDiscord.sendMessage(discordState.currentChannelId, content);
+            await loadDiscordMessages(discordState.currentChannelId);
+        } catch (err) {
+            console.error("Discord send error:", err);
+        }
+        return;
+    }
+
     if (state.currentRoomKind !== "text") return;
     if (!state.currentRoomId || !state.ws) return;
 
@@ -3559,10 +3571,607 @@ async function runAdvancedSearch() {
     }
 }
 
+
+// ── Discord Integrated Mode ────────────────────────────
+
+const discordState = {
+    mode: false,
+    currentGuildId: null,
+    currentGuildName: null,
+    currentChannelId: null,
+    guilds: [],
+    channels: [],
+    oldestMessageId: null,
+    loadingMore: false,
+};
+
+// Channel type constants
+const CHAN_TEXT = 0;
+const CHAN_DM = 1;
+const CHAN_VOICE = 2;
+const CHAN_GROUP_DM = 3;
+const CHAN_CATEGORY = 4;
+const CHAN_ANNOUNCEMENT = 5;
+const CHAN_FORUM = 15;
+const CHAN_MEDIA = 16;
+
+const CHANNEL_ICONS = {
+    [CHAN_TEXT]: "#",
+    [CHAN_VOICE]: "🔊",
+    [CHAN_ANNOUNCEMENT]: "📢",
+    [CHAN_FORUM]: "💬",
+    [CHAN_MEDIA]: "🖼️",
+};
+
+function channelIcon(type) {
+    return CHANNEL_ICONS[type] || "#";
+}
+
+// ── Simple markdown for Discord messages ────────────────
+function discordMarkdown(text) {
+    if (!text) return "";
+    let s = escapeHtml(text);
+    s = s.replace(/```([^`]+?)```/gs, '<pre class="dc-codeblock">$1</pre>');
+    s = s.replace(/`([^`\n]+?)`/g, '<code class="dc-inline-code">$1</code>');
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>");
+    s = s.replace(/__(.+?)__/g, "<u>$1</u>");
+    s = s.replace(/~~(.+?)~~/g, "<s>$1</s>");
+    s = s.replace(/\|\|(.+?)\|\|/g, '<span class="dc-spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>');
+    s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="dc-link">$1</a>');
+    s = s.replace(/\n/g, "<br>");
+    return s;
+}
+
+// ── Enter / Exit Discord mode ───────────────────────────
+function enterDiscordMode() {
+    if (discordState.mode) return;
+    discordState.mode = true;
+    discordState.currentGuildId = null;
+    discordState.currentChannelId = null;
+
+    // Guild bar: swap local ↔ discord
+    localGuildsContainer?.classList.add("hidden");
+    discordGuildsContainer?.classList.remove("hidden");
+    discordBrowseBtn?.classList.add("active");
+    homeGuild?.classList.remove("active");
+    document.querySelector(".guild-icon.server-icon")?.classList.remove("active");
+
+    // Sidebar: hide local content
+    sidebarTextTitle?.classList.add("hidden");
+    sidebarVoiceTitle?.classList.add("hidden");
+    voiceRoomsList?.classList.add("hidden");
+    voiceQuickStatus?.classList.add("hidden");
+    serverSettingsBtn?.classList.add("hidden");
+    if (sidebarHeaderText) sidebarHeaderText.textContent = "Discord";
+    roomsList.innerHTML = '<li class="discord-placeholder" style="padding:20px;text-align:center;">Chargement…</li>';
+
+    // Chat area: clear
+    messagesContainer.innerHTML = '<div class="welcome-message"><h2>Discord</h2><p>Sélectionnez un serveur dans la barre de gauche.</p></div>';
+    if (currentRoomName) currentRoomName.textContent = "Sélectionnez un canal";
+    if (roomKindIcon) roomKindIcon.textContent = "#";
+    deleteRoomBtn?.classList.add("hidden");
+    messageInputArea?.classList.add("hidden");
+    if (pinnedBtn) pinnedBtn.classList.add("hidden");
+
+    // Members sidebar: hide
+    membersSidebar?.classList.add("hidden");
+    voiceRoomPanel?.classList.add("hidden");
+
+    // Load Discord guilds into guild bar
+    loadDiscordGuildsBar();
+}
+
+function exitDiscordMode() {
+    if (!discordState.mode) return;
+    discordState.mode = false;
+    discordState.currentGuildId = null;
+    discordState.currentChannelId = null;
+
+    // Guild bar: restore
+    localGuildsContainer?.classList.remove("hidden");
+    discordGuildsContainer?.classList.add("hidden");
+    if (discordGuildsContainer) discordGuildsContainer.innerHTML = "";
+    discordBrowseBtn?.classList.remove("active");
+    homeGuild?.classList.add("active");
+    document.querySelector(".guild-icon.server-icon")?.classList.add("active");
+
+    // Sidebar: restore local content
+    sidebarTextTitle?.classList.remove("hidden");
+    sidebarVoiceTitle?.classList.remove("hidden");
+    voiceRoomsList?.classList.remove("hidden");
+    voiceQuickStatus?.classList.remove("hidden");
+    serverSettingsBtn?.classList.remove("hidden");
+    if (sidebarHeaderText) sidebarHeaderText.textContent = "Voxium";
+
+    // Reload local rooms
+    loadRooms();
+
+    // Chat area: restore welcome
+    messagesContainer.innerHTML = '<div class="welcome-message"><div class="welcome-icon">#</div><h2>Bienvenue sur Voxium !</h2><p>Sélectionnez un salon dans la sidebar pour commencer à chatter.</p></div>';
+    if (currentRoomName) currentRoomName.textContent = "Sélectionnez un salon";
+    if (roomKindIcon) roomKindIcon.textContent = "#";
+    messageInputArea?.classList.remove("hidden");
+    if (pinnedBtn) pinnedBtn.classList.remove("hidden");
+
+    // Members sidebar: restore
+    membersSidebar?.classList.remove("hidden");
+}
+
+// ── Load guilds into the guild bar ──────────────────────
+async function loadDiscordGuildsBar() {
+    if (!discordGuildsContainer) return;
+    discordGuildsContainer.innerHTML = '<div class="guild-icon" style="opacity:0.5;display:flex;align-items:center;justify-content:center"><span>…</span></div>';
+
+    try {
+        // Fetch guilds and user settings in parallel
+        const [guilds, settings] = await Promise.all([
+            VoxiumDiscord.getGuilds(),
+            VoxiumDiscord.getUserSettings().catch(() => null),
+        ]);
+
+        // Sort guilds to match the official Discord client order
+        // guild_folders contains the exact folder/position layout the user configured
+        let orderedGuilds = guilds;
+        if (settings?.guild_folders?.length) {
+            const folderOrder = settings.guild_folders.flatMap(f => f.guild_ids || []);
+            const positionMap = new Map();
+            folderOrder.forEach((id, idx) => positionMap.set(id, idx));
+
+            orderedGuilds = [...guilds].sort((a, b) => {
+                const posA = positionMap.has(a.id) ? positionMap.get(a.id) : Number.MAX_SAFE_INTEGER;
+                const posB = positionMap.has(b.id) ? positionMap.get(b.id) : Number.MAX_SAFE_INTEGER;
+                return posA - posB;
+            });
+        }
+
+        discordState.guilds = orderedGuilds;
+        discordGuildsContainer.innerHTML = "";
+
+        // DMs shortcut
+        const dmIcon = document.createElement("div");
+        dmIcon.className = "guild-icon discord-dm-guild";
+        dmIcon.title = "Messages privés";
+        dmIcon.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+        dmIcon.addEventListener("click", () => selectDiscordDMs());
+        discordGuildsContainer.appendChild(dmIcon);
+
+        if (orderedGuilds.length) {
+            const sep = document.createElement("div");
+            sep.className = "guild-separator";
+            discordGuildsContainer.appendChild(sep);
+        }
+
+        // Render guild icons with optional folder separators
+        let prevFolderIdx = -1;
+        const folderMap = new Map();
+        if (settings?.guild_folders?.length) {
+            settings.guild_folders.forEach((f, fi) => {
+                (f.guild_ids || []).forEach(gid => folderMap.set(gid, fi));
+            });
+        }
+
+        orderedGuilds.forEach(g => {
+            // Add separator between different folders
+            const folderIdx = folderMap.get(g.id) ?? -1;
+            if (prevFolderIdx !== -1 && folderIdx !== prevFolderIdx) {
+                const sep = document.createElement("div");
+                sep.className = "guild-separator";
+                discordGuildsContainer.appendChild(sep);
+            }
+            prevFolderIdx = folderIdx;
+
+            const icon = document.createElement("div");
+            icon.className = "guild-icon discord-guild-btn";
+            icon.title = g.name;
+            icon.dataset.id = g.id;
+
+            if (g.icon) {
+                icon.innerHTML = `<img src="https://cdn.discordapp.com/icons/${g.id}/${g.icon}.webp?size=128" alt="${escapeHtml(g.name)}" />`;
+            } else {
+                icon.innerHTML = `<span>${escapeHtml(g.name.split(" ").map(w => w[0]).join("").slice(0, 3))}</span>`;
+            }
+
+            icon.addEventListener("click", () => selectDiscordGuild(g));
+            discordGuildsContainer.appendChild(icon);
+        });
+
+        roomsList.innerHTML = '<li class="discord-placeholder">Sélectionnez un serveur.</li>';
+    } catch (err) {
+        discordGuildsContainer.innerHTML = "";
+        roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+    }
+}
+
+// ── Select DMs ──────────────────────────────────────────
+function selectDiscordDMs() {
+    discordGuildsContainer.querySelectorAll(".guild-icon").forEach(el => el.classList.remove("active"));
+    discordGuildsContainer.querySelector(".discord-dm-guild")?.classList.add("active");
+
+    discordState.currentGuildId = null;
+    discordState.currentChannelId = null;
+    if (sidebarHeaderText) sidebarHeaderText.textContent = "Messages privés";
+
+    loadDiscordDMsList();
+}
+
+async function loadDiscordDMsList() {
+    roomsList.innerHTML = '<li class="discord-placeholder" style="padding:20px;text-align:center;">Chargement…</li>';
+    messagesContainer.innerHTML = '<p class="discord-placeholder">Sélectionnez une conversation.</p>';
+    if (currentRoomName) currentRoomName.textContent = "Messages privés";
+    if (roomKindIcon) roomKindIcon.textContent = "@";
+    messageInputArea?.classList.add("hidden");
+
+    try {
+        const dms = await VoxiumDiscord.getDMChannels();
+        roomsList.innerHTML = "";
+
+        if (!dms?.length) {
+            roomsList.innerHTML = '<li class="discord-placeholder">Aucune conversation.</li>';
+            return;
+        }
+
+        // Sort DMs by most recent message (snowflake IDs → BigInt comparison)
+        const sorted = dms.sort((a, b) => {
+            const idA = BigInt(a.last_message_id || "0");
+            const idB = BigInt(b.last_message_id || "0");
+            if (idB > idA) return 1;
+            if (idB < idA) return -1;
+            return 0;
+        });
+
+        sorted.forEach(dm => {
+            const li = document.createElement("li");
+            li.dataset.id = dm.id;
+
+            let name = "DM";
+            let avatarUrl = "";
+
+            if (dm.type === CHAN_DM && dm.recipients?.length) {
+                const r = dm.recipients[0];
+                name = r.global_name || r.username || "Utilisateur";
+                avatarUrl = r.avatar
+                    ? `https://cdn.discordapp.com/avatars/${r.id}/${r.avatar}.webp?size=32`
+                    : `https://cdn.discordapp.com/embed/avatars/${(parseInt(r.discriminator || "0") || 0) % 5}.png`;
+            } else if (dm.type === CHAN_GROUP_DM) {
+                name = dm.name || dm.recipients?.map(r => r.global_name || r.username).join(", ") || "Groupe";
+                avatarUrl = dm.icon
+                    ? `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.webp?size=32`
+                    : "";
+            }
+
+            const avatarHtml = avatarUrl
+                ? `<img src="${avatarUrl}" class="dc-sidebar-avatar" />`
+                : `<span class="channel-hash">@</span>`;
+
+            li.innerHTML = `${avatarHtml}<span>${escapeHtml(name)}</span>`;
+            li.addEventListener("click", () => {
+                discordState.currentGuildId = null;
+                discordState.currentChannelId = dm.id;
+                roomsList.querySelectorAll("li").forEach(l => l.classList.toggle("active", l.dataset.id === dm.id));
+                if (currentRoomName) currentRoomName.textContent = name;
+                if (roomKindIcon) roomKindIcon.textContent = "@";
+                messageInputArea?.classList.remove("hidden");
+                loadDiscordMessages(dm.id);
+            });
+
+            roomsList.appendChild(li);
+        });
+    } catch (err) {
+        roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+    }
+}
+
+// ── Select Discord guild ────────────────────────────────
+async function selectDiscordGuild(guild) {
+    discordState.currentGuildId = guild.id;
+    discordState.currentGuildName = guild.name;
+    discordState.currentChannelId = null;
+
+    // Highlight in guild bar
+    discordGuildsContainer.querySelectorAll(".guild-icon").forEach(el => {
+        el.classList.toggle("active", el.dataset.id === guild.id);
+    });
+
+    // Sidebar
+    if (sidebarHeaderText) sidebarHeaderText.textContent = guild.name;
+
+    // Chat area
+    messagesContainer.innerHTML = '<p class="discord-placeholder">Sélectionnez un canal.</p>';
+    if (currentRoomName) currentRoomName.textContent = "Sélectionnez un canal";
+    if (roomKindIcon) roomKindIcon.textContent = "#";
+    messageInputArea?.classList.add("hidden");
+
+    // Load channels
+    roomsList.innerHTML = '<li class="discord-placeholder" style="padding:12px;text-align:center;">Chargement…</li>';
+
+    try {
+        const channels = await VoxiumDiscord.getGuildChannels(guild.id);
+
+        const categories = channels
+            .filter(c => c.type === CHAN_CATEGORY)
+            .sort((a, b) => a.position - b.position);
+
+        const textTypes = [CHAN_TEXT, CHAN_ANNOUNCEMENT, CHAN_FORUM, CHAN_MEDIA];
+        const visibleChannels = channels
+            .filter(c => textTypes.includes(c.type) || c.type === CHAN_VOICE)
+            .sort((a, b) => a.position - b.position);
+
+        discordState.channels = visibleChannels;
+        roomsList.innerHTML = "";
+
+        if (!visibleChannels.length) {
+            roomsList.innerHTML = '<li class="discord-placeholder">Aucun canal.</li>';
+            return;
+        }
+
+        const uncategorized = visibleChannels.filter(c => !c.parent_id);
+        const byCategory = {};
+        categories.forEach(cat => { byCategory[cat.id] = []; });
+        visibleChannels.forEach(c => {
+            if (c.parent_id && byCategory[c.parent_id]) byCategory[c.parent_id].push(c);
+        });
+
+        // Uncategorized first
+        uncategorized.forEach(c => appendDiscordChannelItem(c));
+
+        // Then each category
+        categories.forEach(cat => {
+            const children = byCategory[cat.id] || [];
+            if (!children.length) return;
+
+            const catLi = document.createElement("li");
+            catLi.className = "discord-category-header";
+            catLi.innerHTML = `<span class="discord-category-arrow">▾</span> ${escapeHtml(cat.name.toUpperCase())}`;
+            catLi.addEventListener("click", () => {
+                catLi.classList.toggle("collapsed");
+                let next = catLi.nextElementSibling;
+                while (next && !next.classList.contains("discord-category-header")) {
+                    next.classList.toggle("hidden", catLi.classList.contains("collapsed"));
+                    next = next.nextElementSibling;
+                }
+            });
+            roomsList.appendChild(catLi);
+            children.forEach(c => appendDiscordChannelItem(c));
+        });
+    } catch (err) {
+        roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+    }
+}
+
+function appendDiscordChannelItem(channel) {
+    const li = document.createElement("li");
+    li.dataset.id = channel.id;
+    li.dataset.type = channel.type;
+    const isVoice = channel.type === CHAN_VOICE;
+    const icon = channelIcon(channel.type);
+    li.innerHTML = `<span class="channel-hash${isVoice ? " voice" : ""}">${icon}</span><span>${escapeHtml(channel.name)}</span>`;
+    if (!isVoice) {
+        li.addEventListener("click", () => selectDiscordChannel(channel));
+    } else {
+        li.classList.add("discord-voice-channel");
+        li.title = "Canal vocal (non supporté en navigation)";
+    }
+    roomsList.appendChild(li);
+}
+
+// ── Select Discord channel → load messages ──────────────
+async function selectDiscordChannel(channel) {
+    discordState.currentChannelId = channel.id;
+    discordState.oldestMessageId = null;
+    roomsList.querySelectorAll("li").forEach(li => li.classList.toggle("active", li.dataset.id === channel.id));
+    if (currentRoomName) currentRoomName.textContent = channel.name;
+    if (roomKindIcon) roomKindIcon.textContent = channelIcon(channel.type);
+    messageInputArea?.classList.remove("hidden");
+    await loadDiscordMessages(channel.id);
+}
+
+// ── Avatar helper ───────────────────────────────────────
+function discordAvatarUrl(user) {
+    if (!user) return "https://cdn.discordapp.com/embed/avatars/0.png";
+    if (user.avatar) {
+        return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.webp?size=64`;
+    }
+    const idx = user.discriminator && user.discriminator !== "0"
+        ? parseInt(user.discriminator) % 5
+        : Number(BigInt(user.id || 0) >> 22n) % 6;
+    return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
+}
+
+// ── Render a single Discord message ─────────────────────
+function renderDiscordMessage(m) {
+    const div = document.createElement("div");
+    div.className = "discord-msg";
+    div.dataset.id = m.id;
+
+    const avatarUrl = discordAvatarUrl(m.author);
+    const time = new Date(m.timestamp).toLocaleString();
+
+    // Reply reference
+    let replyHtml = "";
+    if (m.referenced_message) {
+        const refAuthor = m.referenced_message.author?.global_name || m.referenced_message.author?.username || "?";
+        const refContent = escapeHtml((m.referenced_message.content || "").slice(0, 100));
+        replyHtml = `<div class="dc-reply-ref">
+            <span class="dc-reply-icon">↩</span>
+            <span class="dc-reply-author">${escapeHtml(refAuthor)}</span>
+            <span class="dc-reply-text">${refContent}${m.referenced_message.content?.length > 100 ? "…" : ""}</span>
+        </div>`;
+    }
+
+    // Attachments
+    const attachmentsHtml = (m.attachments || []).map(a => {
+        const url = a.proxy_url || a.url;
+        if (a.content_type?.startsWith("image/")) {
+            return `<div class="dc-attachment-img"><img src="${url}" alt="${escapeHtml(a.filename)}" loading="lazy" onclick="openLightbox('${url}')" /></div>`;
+        }
+        if (a.content_type?.startsWith("video/")) {
+            return `<div class="dc-attachment-video"><video controls preload="metadata" src="${url}" style="max-width:400px;max-height:300px;border-radius:8px;"></video></div>`;
+        }
+        return `<div class="dc-attachment-file"><a href="${a.url}" target="_blank">${escapeHtml(a.filename)}</a> <span class="dc-file-size">(${formatFileSize(a.size)})</span></div>`;
+    }).join("");
+
+    // Embeds
+    const embedsHtml = (m.embeds || []).map(e => renderDiscordEmbed(e)).join("");
+
+    // Reactions
+    const reactionsHtml = m.reactions?.length
+        ? `<div class="dc-reactions">${m.reactions.map(r => {
+            const emoji = r.emoji?.name || "?";
+            const count = r.count || 1;
+            const me = r.me ? " dc-reaction-me" : "";
+            return `<span class="dc-reaction${me}" title="${emoji}">${emoji} ${count}</span>`;
+        }).join("")}</div>`
+        : "";
+
+    // Stickers
+    const stickersHtml = (m.sticker_items || []).map(s => {
+        if (s.format_type === 1 || s.format_type === 2) {
+            return `<div class="dc-sticker"><img src="https://media.discordapp.net/stickers/${s.id}.webp?size=160" alt="${escapeHtml(s.name)}" loading="lazy" /></div>`;
+        }
+        return `<div class="dc-sticker">[Sticker: ${escapeHtml(s.name)}]</div>`;
+    }).join("");
+
+    const contentHtml = discordMarkdown(m.content);
+
+    div.innerHTML = `${replyHtml}
+        <img class="discord-msg-avatar" src="${avatarUrl}" alt="" loading="lazy" />
+        <div class="discord-msg-body">
+            <div class="discord-msg-header">
+                <span class="discord-msg-author">${escapeHtml(m.author?.global_name || m.author?.username || "?")}</span>
+                <span class="discord-msg-time">${time}</span>
+            </div>
+            <div class="discord-msg-content">${contentHtml}</div>
+            ${attachmentsHtml}${embedsHtml}${stickersHtml}${reactionsHtml}
+        </div>`;
+
+    return div;
+}
+
+function formatFileSize(bytes) {
+    if (!bytes) return "0 B";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+function renderDiscordEmbed(e) {
+    if (!e) return "";
+    const color = e.color ? `border-left-color:#${e.color.toString(16).padStart(6, "0")}` : "";
+    let parts = [];
+
+    if (e.author?.name) {
+        const authorLink = e.author.url ? `<a href="${e.author.url}" target="_blank" class="dc-link">${escapeHtml(e.author.name)}</a>` : escapeHtml(e.author.name);
+        parts.push(`<div class="dc-embed-author">${authorLink}</div>`);
+    }
+    if (e.title) {
+        const titleText = e.url ? `<a href="${e.url}" target="_blank" class="dc-link dc-embed-title-link">${escapeHtml(e.title)}</a>` : escapeHtml(e.title);
+        parts.push(`<div class="dc-embed-title">${titleText}</div>`);
+    }
+    if (e.description) {
+        parts.push(`<div class="dc-embed-desc">${discordMarkdown(e.description)}</div>`);
+    }
+    if (e.fields?.length) {
+        const fieldsHtml = e.fields.map(f => {
+            const inline = f.inline ? " dc-embed-field-inline" : "";
+            return `<div class="dc-embed-field${inline}"><div class="dc-embed-field-name">${escapeHtml(f.name)}</div><div class="dc-embed-field-value">${discordMarkdown(f.value)}</div></div>`;
+        }).join("");
+        parts.push(`<div class="dc-embed-fields">${fieldsHtml}</div>`);
+    }
+    if (e.image?.proxy_url || e.image?.url) {
+        const imgUrl = e.image.proxy_url || e.image.url;
+        parts.push(`<div class="dc-embed-image"><img src="${imgUrl}" loading="lazy" onclick="openLightbox('${imgUrl}')" /></div>`);
+    }
+    if (e.thumbnail?.proxy_url || e.thumbnail?.url) {
+        const thumbUrl = e.thumbnail.proxy_url || e.thumbnail.url;
+        parts.push(`<div class="dc-embed-thumb"><img src="${thumbUrl}" loading="lazy" /></div>`);
+    }
+    if (e.footer?.text) {
+        parts.push(`<div class="dc-embed-footer">${escapeHtml(e.footer.text)}</div>`);
+    }
+    if (e.video?.proxy_url || e.video?.url) {
+        const vidUrl = e.video.proxy_url || e.video.url;
+        parts.push(`<div class="dc-embed-video"><video controls preload="metadata" src="${vidUrl}" style="max-width:400px;border-radius:4px;"></video></div>`);
+    }
+
+    return `<div class="dc-embed" style="${color}">${parts.join("")}</div>`;
+}
+
+// ── Load Discord messages (initial or prepend older) ────
+async function loadDiscordMessages(channelId, before = null) {
+    if (!messagesContainer) return;
+
+    if (!before) {
+        messagesContainer.innerHTML = '<p class="discord-placeholder">Chargement des messages…</p>';
+        discordState.oldestMessageId = null;
+    }
+
+    try {
+        const messages = await VoxiumDiscord.getMessages(channelId, 50, before);
+        if (!before) messagesContainer.innerHTML = "";
+
+        if (!messages.length) {
+            if (!before) {
+                messagesContainer.innerHTML = '<p class="discord-placeholder">Aucun message dans ce canal.</p>';
+            }
+            return;
+        }
+
+        discordState.oldestMessageId = messages[messages.length - 1]?.id || null;
+        const ordered = [...messages].reverse();
+
+        if (before) {
+            const scrollHeightBefore = messagesContainer.scrollHeight;
+            const fragment = document.createDocumentFragment();
+            ordered.forEach(m => fragment.appendChild(renderDiscordMessage(m)));
+            messagesContainer.prepend(fragment);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight - scrollHeightBefore;
+        } else {
+            const fragment = document.createDocumentFragment();
+            ordered.forEach(m => fragment.appendChild(renderDiscordMessage(m)));
+            messagesContainer.appendChild(fragment);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    } catch (err) {
+        if (!before) {
+            messagesContainer.innerHTML = `<p class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</p>`;
+        }
+    }
+}
+
+// ── Scroll-up infinite loading (Discord mode) ───────────
+if (messagesContainer) {
+    messagesContainer.addEventListener("scroll", async () => {
+        if (!discordState.mode) return;
+        if (discordState.loadingMore) return;
+        if (!discordState.currentChannelId || !discordState.oldestMessageId) return;
+        if (messagesContainer.scrollTop < 200) {
+            discordState.loadingMore = true;
+            await loadDiscordMessages(discordState.currentChannelId, discordState.oldestMessageId);
+            discordState.loadingMore = false;
+        }
+    });
+}
+
+// ── Event listeners ─────────────────────────────────────
+if (discordBrowseBtn) {
+    discordBrowseBtn.addEventListener("click", () => {
+        if (discordState.mode) return;
+        enterDiscordMode();
+    });
+}
+
+if (homeGuild) {
+    homeGuild.addEventListener("click", () => {
+        if (discordState.mode) {
+            exitDiscordMode();
+        }
+    });
+}
+
 // ── Init ───────────────────────────────────────────────
 async function initApp() {
-    const discordAuthenticated = await handleDiscordOAuthCallback();
-    if (state.token || discordAuthenticated) {
+    if (state.token) {
         enterApp();
     } else {
         authModal.classList.remove("hidden");
