@@ -16,14 +16,10 @@
     <div id="auth-modal" class="modal">
         <div class="modal-content">
             <div class="modal-logo">
-                <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                    <rect width="48" height="48" rx="12" fill="#5865F2" />
-                    <path d="M18 22C18 22 20 20 24 20C28 20 30 22 30 22" stroke="white" stroke-width="2.5"
-                        stroke-linecap="round" />
-                    <circle cx="20" cy="26" r="2.5" fill="white" />
-                    <circle cx="28" cy="26" r="2.5" fill="white" />
-                    <path d="M16 32C16 32 19 34 24 34C29 34 32 32 32 32" stroke="white" stroke-width="2.5"
-                        stroke-linecap="round" />
+                <svg class="vx-mark" width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                    <rect x="4" y="4" width="40" height="40" rx="14" fill="currentColor" opacity="0.18" />
+                    <path d="M14 16L22.6 33.5C22.9 34.2 23.8 34.2 24.1 33.5L32.7 16" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M16.2 16.2L31.8 31.8" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
                 </svg>
                 <h1>Voxium</h1>
                 <p class="modal-subtitle">Chat en temps réel</p>
@@ -47,11 +43,10 @@
                 <div class="auth-separator" role="separator" aria-hidden="true">
                     <span>ou</span>
                 </div>
-                <button type="button" class="btn-discord" id="auth-discord-btn">
-                    <svg width="20" height="16" viewBox="0 0 71 55" fill="currentColor" style="vertical-align:middle;margin-right:8px">
-                        <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A39.5 39.5 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5 59.7 59.7 0 00.4 45a.3.3 0 00.1.2A58.9 58.9 0 0018.2 55a.2.2 0 00.3-.1 42.2 42.2 0 003.6-5.9.2.2 0 00-.1-.3 38.8 38.8 0 01-5.5-2.7.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 42 42 0 0035.8 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .4 36.4 36.4 0 01-5.5 2.7.2.2 0 00-.1.3 47.4 47.4 0 003.6 5.9.2.2 0 00.3.1A58.7 58.7 0 0070.7 45a.3.3 0 00.1-.2c1.2-12.6-2-23.6-8.7-33.3zM23.7 36.9c-2.9 0-5.3-2.7-5.3-5.9s2.3-5.9 5.3-5.9 5.3 2.7 5.3 5.9-2.4 5.9-5.3 5.9zm19.6 0c-2.9 0-5.3-2.7-5.3-5.9s2.3-5.9 5.3-5.9 5.3 2.7 5.3 5.9-2.3 5.9-5.3 5.9z"/>
-                    </svg>
-                    Connexion avec QR Discord
+                <button type="button" class="btn-integration" id="auth-discord-btn">
+                    <span class="integration-glyph" aria-hidden="true">D</span>
+                    <span>Connexion via QR</span>
+                    <span class="badge badge-integration" aria-label="Discord intégré">Discord intégré</span>
                 </button>
                 <div id="auth-discord-qr" class="auth-discord-qr hidden" aria-live="polite">
                     <div class="auth-discord-qr-box">
@@ -71,14 +66,14 @@
         <!-- Guild Bar (Far Left) -->
         <nav class="guild-bar">
             <div class="guild-icon home-icon active" id="home-guild" title="Messages Privés">
-                <svg width="28" height="20" viewBox="0 0 48 48" fill="none">
-                    <path d="M18 22C18 22 20 20 24 20C28 20 30 22 30 22" stroke="currentColor" stroke-width="3"
-                        stroke-linecap="round" />
-                    <circle cx="20" cy="26" r="2.5" fill="currentColor" />
-                    <circle cx="28" cy="26" r="2.5" fill="currentColor" />
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 13h5" />
                 </svg>
             </div>
             <div class="guild-separator"></div>
+            <div class="guild-section-label" aria-hidden="true">Local</div>
             <div id="local-guilds-container">
                 <div class="guild-icon server-icon active" title="Voxium Server">
                     <span>VX</span>
@@ -91,12 +86,12 @@
                     </svg>
                 </div>
             </div>
+            <div class="guild-separator"></div>
+            <div class="guild-section-label" id="integrations-label" aria-hidden="true">Intégrations</div>
             <div id="discord-guilds-container" class="hidden"></div>
             <div class="guild-separator"></div>
             <div class="guild-icon discord-browse-icon" id="discord-browse-btn" title="Parcourir Discord">
-                <svg width="24" height="18" viewBox="0 0 71 55" fill="currentColor">
-                    <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A39.5 39.5 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.5 5 59.7 59.7 0 00.4 45a.3.3 0 00.1.2A58.9 58.9 0 0018.2 55a.2.2 0 00.3-.1 42.2 42.2 0 003.6-5.9.2.2 0 00-.1-.3 38.8 38.8 0 01-5.5-2.7.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 42 42 0 0035.8 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .4 36.4 36.4 0 01-5.5 2.7.2.2 0 00-.1.3 47.4 47.4 0 003.6 5.9.2.2 0 00.3.1A58.7 58.7 0 0070.7 45a.3.3 0 00.1-.2c1.2-12.6-2-23.6-8.7-33.3zM23.7 36.9c-2.9 0-5.3-2.7-5.3-5.9s2.3-5.9 5.3-5.9 5.3 2.7 5.3 5.9-2.4 5.9-5.3 5.9zm19.6 0c-2.9 0-5.3-2.7-5.3-5.9s2.3-5.9 5.3-5.9 5.3 2.7 5.3 5.9-2.3 5.9-5.3 5.9z"/>
-                </svg>
+                <span class="integration-glyph" aria-hidden="true">D</span>
             </div>
         </nav>
 
@@ -193,6 +188,7 @@
             <div class="chat-header">
                 <span class="hash" id="room-kind-icon">#</span>
                 <span id="current-room-name">Sélectionnez un salon</span>
+                <span id="current-room-topic" class="chat-topic hidden"></span>
                 <div class="header-toolbar">
                     <button id="delete-room-btn" class="hidden toolbar-btn danger" title="Supprimer ce salon">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -417,6 +413,8 @@
             </ul>
         </aside>
     </div>
+
+    <div id="toast-stack" class="toast-stack" aria-live="polite" aria-relevant="additions"></div>
 
     <!-- Pinned Messages Modal -->
     <div id="pinned-modal" class="modal hidden">

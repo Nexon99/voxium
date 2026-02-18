@@ -14,6 +14,7 @@ const QUICK_REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"]
 const MESSAGE_REACTION_PICKER_ID = "message-reaction-picker";
 
 const COLOR_THEME_PRESETS = {
+    voxium: { accent: "#7A5CFF", accentHover: "#6B4FFF", textLink: "#79B7FF" },
     blurple: { accent: "#5865f2", accentHover: "#4752c4", textLink: "#00a8fc" },
     teal: { accent: "#1abc9c", accentHover: "#0f9d82", textLink: "#36cfc9" },
     emerald: { accent: "#57f287", accentHover: "#2fbf71", textLink: "#64d8cb" },
@@ -71,7 +72,7 @@ let state = {
 // ── Preferences ────────────────────────────────────────
 let prefs = {
     theme: localStorage.getItem("theme") || "dark",
-    themeColor: localStorage.getItem("themeColor") || "blurple",
+    themeColor: localStorage.getItem("themeColor") || "voxium",
     colorThemeBg: localStorage.getItem("colorThemeBg") !== "false",
     fontSize: parseInt(localStorage.getItem("fontSize") || "15"),
     reduceMotion: localStorage.getItem("reduceMotion") === "true",
@@ -132,6 +133,7 @@ const replyTargetName = $("#reply-target-name");
 const replyTargetSnippet = $("#reply-target-snippet");
 const replyCancelBtn = $("#reply-cancel-btn");
 const currentRoomName = $("#current-room-name");
+const currentRoomTopic = $("#current-room-topic");
 const roomKindIcon = $("#room-kind-icon");
 const addRoomBtn = $("#add-room-btn");
 const createRoomModal = $("#create-room-modal");
@@ -189,6 +191,33 @@ const voiceQuickStatus = $("#voice-quick-status");
 const voiceStatusText = $("#voice-status-text");
 const voiceMeterBars = $("#voice-meter-bars");
 const voiceMeterLabel = $("#voice-meter-label");
+
+// Toasts
+const toastStack = $("#toast-stack");
+
+function showToast(message, kind = "error", timeoutMs = 4500) {
+    if (!toastStack || !message) return;
+    const el = document.createElement("div");
+    el.className = `toast toast-${kind}`;
+    el.textContent = message;
+    toastStack.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("show"));
+    window.setTimeout(() => {
+        el.classList.remove("show");
+        window.setTimeout(() => el.remove(), 220);
+    }, timeoutMs);
+}
+
+function setSidebarHeaderLocal() {
+    if (!sidebarHeaderText) return;
+    sidebarHeaderText.textContent = "Voxium";
+}
+
+function setSidebarHeaderDiscord(name) {
+    if (!sidebarHeaderText) return;
+    const safe = escapeHtml(name || "Discord");
+    sidebarHeaderText.innerHTML = `<span class="sidebar-space-prefix">Discord</span><span class="sidebar-space-name">${safe}</span><span class="badge badge-integration" title="Discord intégré">Intégré</span>`;
+}
 
 // Discord mode (integrated into main UI)
 const discordBrowseBtn = $("#discord-browse-btn");
@@ -3643,13 +3672,17 @@ function enterDiscordMode() {
     voiceRoomsList?.classList.add("hidden");
     voiceQuickStatus?.classList.add("hidden");
     serverSettingsBtn?.classList.add("hidden");
-    if (sidebarHeaderText) sidebarHeaderText.textContent = "Discord";
+    setSidebarHeaderDiscord("Sélection");
     roomsList.innerHTML = '<li class="discord-placeholder" style="padding:20px;text-align:center;">Chargement…</li>';
 
     // Chat area: clear
     messagesContainer.innerHTML = '<div class="welcome-message"><h2>Discord</h2><p>Sélectionnez un serveur dans la barre de gauche.</p></div>';
     if (currentRoomName) currentRoomName.textContent = "Sélectionnez un canal";
     if (roomKindIcon) roomKindIcon.textContent = "#";
+    if (currentRoomTopic) {
+        currentRoomTopic.textContent = "Discord intégré";
+        currentRoomTopic.classList.remove("hidden");
+    }
     deleteRoomBtn?.classList.add("hidden");
     messageInputArea?.classList.add("hidden");
     if (pinnedBtn) pinnedBtn.classList.add("hidden");
@@ -3682,7 +3715,7 @@ function exitDiscordMode() {
     voiceRoomsList?.classList.remove("hidden");
     voiceQuickStatus?.classList.remove("hidden");
     serverSettingsBtn?.classList.remove("hidden");
-    if (sidebarHeaderText) sidebarHeaderText.textContent = "Voxium";
+    setSidebarHeaderLocal();
 
     // Reload local rooms
     loadRooms();
@@ -3691,6 +3724,10 @@ function exitDiscordMode() {
     messagesContainer.innerHTML = '<div class="welcome-message"><div class="welcome-icon">#</div><h2>Bienvenue sur Voxium !</h2><p>Sélectionnez un salon dans la sidebar pour commencer à chatter.</p></div>';
     if (currentRoomName) currentRoomName.textContent = "Sélectionnez un salon";
     if (roomKindIcon) roomKindIcon.textContent = "#";
+    if (currentRoomTopic) {
+        currentRoomTopic.textContent = "";
+        currentRoomTopic.classList.add("hidden");
+    }
     messageInputArea?.classList.remove("hidden");
     if (pinnedBtn) pinnedBtn.classList.remove("hidden");
 
@@ -3701,7 +3738,11 @@ function exitDiscordMode() {
 // ── Load guilds into the guild bar ──────────────────────
 async function loadDiscordGuildsBar() {
     if (!discordGuildsContainer) return;
-    discordGuildsContainer.innerHTML = '<div class="guild-icon" style="opacity:0.5;display:flex;align-items:center;justify-content:center"><span>…</span></div>';
+    discordGuildsContainer.innerHTML = `
+        <div class="guild-icon is-skeleton" aria-hidden="true"></div>
+        <div class="guild-icon is-skeleton" aria-hidden="true"></div>
+        <div class="guild-icon is-skeleton" aria-hidden="true"></div>
+    `;
 
     try {
         // Fetch guilds and user settings in parallel
@@ -3732,7 +3773,7 @@ async function loadDiscordGuildsBar() {
         const dmIcon = document.createElement("div");
         dmIcon.className = "guild-icon discord-dm-guild";
         dmIcon.title = "Messages privés";
-        dmIcon.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
+        dmIcon.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /><path d="M8 9h8" /><path d="M8 13h5" /></svg><span class="integration-corner" aria-hidden="true">D</span>`;
         dmIcon.addEventListener("click", () => selectDiscordDMs());
         discordGuildsContainer.appendChild(dmIcon);
 
@@ -3772,6 +3813,8 @@ async function loadDiscordGuildsBar() {
                 icon.innerHTML = `<span>${escapeHtml(g.name.split(" ").map(w => w[0]).join("").slice(0, 3))}</span>`;
             }
 
+            icon.insertAdjacentHTML("beforeend", '<span class="integration-corner" aria-hidden="true">D</span>');
+
             icon.addEventListener("click", () => selectDiscordGuild(g));
             discordGuildsContainer.appendChild(icon);
         });
@@ -3780,6 +3823,7 @@ async function loadDiscordGuildsBar() {
     } catch (err) {
         discordGuildsContainer.innerHTML = "";
         roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+        showToast(err.message || "Erreur Discord", "error");
     }
 }
 
@@ -3790,7 +3834,7 @@ function selectDiscordDMs() {
 
     discordState.currentGuildId = null;
     discordState.currentChannelId = null;
-    if (sidebarHeaderText) sidebarHeaderText.textContent = "Messages privés";
+    setSidebarHeaderDiscord("Messages privés");
 
     loadDiscordDMsList();
 }
@@ -3800,6 +3844,10 @@ async function loadDiscordDMsList() {
     messagesContainer.innerHTML = '<p class="discord-placeholder">Sélectionnez une conversation.</p>';
     if (currentRoomName) currentRoomName.textContent = "Messages privés";
     if (roomKindIcon) roomKindIcon.textContent = "@";
+    if (currentRoomTopic) {
+        currentRoomTopic.textContent = "Discord intégré";
+        currentRoomTopic.classList.remove("hidden");
+    }
     messageInputArea?.classList.add("hidden");
 
     try {
@@ -3822,6 +3870,7 @@ async function loadDiscordDMsList() {
 
         sorted.forEach(dm => {
             const li = document.createElement("li");
+            li.className = "discord-dm-item";
             li.dataset.id = dm.id;
 
             let name = "DM";
@@ -3844,7 +3893,7 @@ async function loadDiscordDMsList() {
                 ? `<img src="${avatarUrl}" class="dc-sidebar-avatar" />`
                 : `<span class="channel-hash">@</span>`;
 
-            li.innerHTML = `${avatarHtml}<span>${escapeHtml(name)}</span>`;
+            li.innerHTML = `${avatarHtml}<span>${escapeHtml(name)}</span><span class="integration-mini" aria-hidden="true">D</span>`;
             li.addEventListener("click", () => {
                 discordState.currentGuildId = null;
                 discordState.currentChannelId = dm.id;
@@ -3859,6 +3908,7 @@ async function loadDiscordDMsList() {
         });
     } catch (err) {
         roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+        showToast(err.message || "Erreur Discord", "error");
     }
 }
 
@@ -3874,12 +3924,16 @@ async function selectDiscordGuild(guild) {
     });
 
     // Sidebar
-    if (sidebarHeaderText) sidebarHeaderText.textContent = guild.name;
+    setSidebarHeaderDiscord(guild.name);
 
     // Chat area
     messagesContainer.innerHTML = '<p class="discord-placeholder">Sélectionnez un canal.</p>';
     if (currentRoomName) currentRoomName.textContent = "Sélectionnez un canal";
     if (roomKindIcon) roomKindIcon.textContent = "#";
+    if (currentRoomTopic) {
+        currentRoomTopic.textContent = "Discord intégré";
+        currentRoomTopic.classList.remove("hidden");
+    }
     messageInputArea?.classList.add("hidden");
 
     // Load channels
@@ -3936,16 +3990,18 @@ async function selectDiscordGuild(guild) {
         });
     } catch (err) {
         roomsList.innerHTML = `<li class="discord-placeholder" style="color:var(--red);">Erreur : ${escapeHtml(err.message)}</li>`;
+        showToast(err.message || "Erreur Discord", "error");
     }
 }
 
 function appendDiscordChannelItem(channel) {
     const li = document.createElement("li");
+    li.classList.add("discord-channel-item");
     li.dataset.id = channel.id;
     li.dataset.type = channel.type;
     const isVoice = channel.type === CHAN_VOICE;
     const icon = channelIcon(channel.type);
-    li.innerHTML = `<span class="channel-hash${isVoice ? " voice" : ""}">${icon}</span><span>${escapeHtml(channel.name)}</span>`;
+    li.innerHTML = `<span class="channel-hash${isVoice ? " voice" : ""}">${icon}</span><span class="discord-channel-name">${escapeHtml(channel.name)}</span><span class="integration-mini" aria-hidden="true">D</span>`;
     if (!isVoice) {
         li.addEventListener("click", () => selectDiscordChannel(channel));
     } else {
@@ -3962,6 +4018,11 @@ async function selectDiscordChannel(channel) {
     roomsList.querySelectorAll("li").forEach(li => li.classList.toggle("active", li.dataset.id === channel.id));
     if (currentRoomName) currentRoomName.textContent = channel.name;
     if (roomKindIcon) roomKindIcon.textContent = channelIcon(channel.type);
+    if (currentRoomTopic) {
+        const topic = (channel && typeof channel.topic === "string" && channel.topic.trim()) ? channel.topic.trim() : "Discord intégré";
+        currentRoomTopic.textContent = topic;
+        currentRoomTopic.classList.remove("hidden");
+    }
     messageInputArea?.classList.remove("hidden");
     await loadDiscordMessages(channel.id);
 }
