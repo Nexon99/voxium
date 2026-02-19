@@ -45,6 +45,8 @@ async fn start_server() -> std::io::Result<()> {
             .allowed_origin("tauri://localhost")
             .allowed_origin("http://localhost:1420")
             .allowed_origin("http://127.0.0.1:1420")
+            .allowed_origin("http://localhost:1430")
+            .allowed_origin("http://127.0.0.1:1430")
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
